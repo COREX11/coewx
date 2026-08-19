@@ -1,0 +1,1704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OmniLab VR - Immersive Science Laboratory (Meta Quest 3S)</title>
+  
+  <!-- A-Frame 1.6.0 WebXR Framework -->
+  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: #050811;
+      color: #e0f2fe;
+      user-select: none;
+    }
+
+    /* 2D Desktop Fallback & Loading Overlay */
+    #loading-screen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(circle at center, #0f172a 0%, #020617 100%);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 99999;
+      transition: opacity 0.8s ease-out;
+    }
+
+    .lab-logo {
+      font-size: 2.8rem;
+      font-weight: 800;
+      letter-spacing: 4px;
+      background: linear-gradient(135deg, #38bdf8, #818cf8, #c084fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+    }
+
+    .lab-subtitle {
+      font-size: 1.1rem;
+      color: #94a3b8;
+      letter-spacing: 2px;
+      margin-bottom: 30px;
+    }
+
+    .start-btn {
+      padding: 16px 36px;
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      color: #ffffff;
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      border: none;
+      border-radius: 30px;
+      cursor: pointer;
+      box-shadow: 0 0 25px rgba(37, 99, 235, 0.5);
+      transition: all 0.3s ease;
+    }
+
+    .start-btn:hover {
+      transform: translateY(-2px) scale(1.04);
+      box-shadow: 0 0 35px rgba(56, 189, 248, 0.8);
+      background: linear-gradient(135deg, #0ea5e9, #3b82f6);
+    }
+
+    .specs-badge {
+      margin-top: 30px;
+      padding: 8px 18px;
+      border-radius: 20px;
+      background: rgba(30, 41, 59, 0.7);
+      border: 1px solid #334155;
+      font-size: 0.85rem;
+      color: #38bdf8;
+    }
+
+    /* 2D Desktop Controls Overlay */
+    #desktop-hud {
+      position: fixed;
+      top: 15px;
+      left: 15px;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 12px;
+      padding: 14px 20px;
+      color: #f8fafc;
+      font-size: 0.85rem;
+      z-index: 1000;
+      pointer-events: none;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+
+    #desktop-hud h4 {
+      margin: 0 0 6px 0;
+      font-size: 0.95rem;
+      color: #38bdf8;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .hud-stat {
+      display: flex;
+      justify-content: space-between;
+      gap: 15px;
+      margin: 3px 0;
+    }
+
+    .hud-val {
+      font-weight: bold;
+      color: #facc15;
+    }
+
+    /* Crosshair for desktop mouse aiming */
+    #crosshair {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: 8px;
+      height: 8px;
+      transform: translate(-50%, -50%);
+      background: rgba(56, 189, 248, 0.8);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 1001;
+      box-shadow: 0 0 8px #38bdf8;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Loading Screen & Audio / VR Initializer -->
+  <div id="loading-screen">
+    <div class="lab-logo">OmniLab VR</div>
+    <div class="lab-subtitle">Advanced Science Campus &bull; Meta Quest 3S Edition</div>
+    <button class="start-btn" id="enter-lab-btn">ENTER SCIENCE LABORATORY</button>
+    <div class="specs-badge">
+      ⚡ Optimized for Meta Quest 3S 6DoF Controllers &bull; Physics &bull; Chemistry &bull; Biology
+    </div>
+  </div>
+
+  <!-- 2D Desktop HUD -->
+  <div id="desktop-hud">
+    <h4>OmniLab Science HUD</h4>
+    <div class="hud-stat"><span>Current Wing:</span><span class="hud-val" id="hud-wing">Central Atrium</span></div>
+    <div class="hud-stat"><span>Safety Gear (PPE):</span><span class="hud-val" id="hud-ppe">Equipped (Goggles &amp; Gloves)</span></div>
+    <div class="hud-stat"><span>Student Score:</span><span class="hud-val" id="hud-score">0 pts</span></div>
+    <div class="hud-stat"><span>Controls:</span><span style="color:#94a3b8">VR Laser/Grip &bull; WASD+Click</span></div>
+  </div>
+  <div id="crosshair"></div>
+
+  <!-- Embedded Web Audio Sound Synthesizer (No external audio file dependencies!) -->
+  <script>
+    class LabAudioSynth {
+      constructor() {
+        this.ctx = null;
+        this.init();
+      }
+
+      init() {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (AudioContext) {
+          this.ctx = new AudioContext();
+        }
+      }
+
+      ensureContext() {
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+
+      playClick() {
+        this.ensureContext();
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(800, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(400, this.ctx.currentTime + 0.05);
+        gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.001, this.ctx.currentTime + 0.05);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.05);
+      }
+
+      playBeep(freq = 600, duration = 0.1) {
+        this.ensureContext();
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+        gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + duration);
+      }
+
+      playPour() {
+        this.ensureContext();
+        if (!this.ctx) return;
+        const bufferSize = this.ctx.sampleRate * 0.4;
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+          data[i] = (Math.random() * 2 - 1) * 0.15;
+        }
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = buffer;
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(1200, this.ctx.currentTime);
+        filter.Q.setValueAtTime(3.0, this.ctx.currentTime);
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.4);
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+        noise.start();
+      }
+
+      playFizz() {
+        this.ensureContext();
+        if (!this.ctx) return;
+        const bufferSize = this.ctx.sampleRate * 0.8;
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+          data[i] = (Math.random() * 2 - 1) * 0.2;
+        }
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = buffer;
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'highpass';
+        filter.frequency.setValueAtTime(3000, this.ctx.currentTime);
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.8);
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+        noise.start();
+      }
+
+      playCannon() {
+        this.ensureContext();
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(180, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(40, this.ctx.currentTime + 0.3);
+        gain.gain.setValueAtTime(0.4, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.3);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.3);
+      }
+
+      playLaserHum() {
+        this.ensureContext();
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(440, this.ctx.currentTime);
+        gain.gain.setValueAtTime(0.08, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.2);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.2);
+      }
+
+      playHeartbeat() {
+        this.ensureContext();
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(65, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(35, this.ctx.currentTime + 0.12);
+        gain.gain.setValueAtTime(0.35, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.12);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.12);
+      }
+
+      playSuccess() {
+        this.ensureContext();
+        if (!this.ctx) return;
+        const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+        notes.forEach((freq, idx) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, this.ctx.currentTime + idx * 0.08);
+          gain.gain.setValueAtTime(0, this.ctx.currentTime + idx * 0.08);
+          gain.gain.linearRampToValueAtTime(0.18, this.ctx.currentTime + idx * 0.08 + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + idx * 0.08 + 0.35);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(this.ctx.currentTime + idx * 0.08);
+          osc.stop(this.ctx.currentTime + idx * 0.08 + 0.35);
+        });
+      }
+
+      playPortal() {
+        this.ensureContext();
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(300, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(900, this.ctx.currentTime + 0.4);
+        gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.4);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.4);
+      }
+    }
+
+    const soundSynth = new LabAudioSynth();
+  </script>
+
+  <!-- Global Educational & Lab State Manager -->
+  <script>
+    window.OmniLab = {
+      score: 0,
+      ppeEquipped: true, // Auto-equipped by default with safety badge
+      currentWing: 'Central Atrium',
+      experimentsCompleted: {
+        physics_cannon: false,
+        physics_pendulum: false,
+        physics_circuit: false,
+        physics_optics: false,
+        chem_titration: false,
+        chem_mixing: false,
+        chem_flame: false,
+        chem_ph: false,
+        bio_microscope: false,
+        bio_cell: false,
+        bio_dna: false,
+        bio_cardio: false
+      },
+      addScore(pts, reason = 'Interaction Complete') {
+        this.score += pts;
+        soundSynth.playSuccess();
+        const scoreEl = document.getElementById('hud-score');
+        if (scoreEl) scoreEl.textContent = `${this.score} pts`;
+        
+        // Update VR floating HUD
+        const vrScoreText = document.getElementById('vr-tablet-score');
+        if (vrScoreText) {
+          vrScoreText.setAttribute('text', 'value', `Student Score: ${this.score} pts | Completed: ${this.getCompletedCount()}/12`);
+        }
+
+        // Show floating notification in VR
+        this.showVRNotification(`+${pts} PTS: ${reason}`);
+      },
+      getCompletedCount() {
+        return Object.values(this.experimentsCompleted).filter(Boolean).length;
+      },
+      showVRNotification(text) {
+        const notif = document.getElementById('vr-toast-notification');
+        if (notif) {
+          notif.setAttribute('text', 'value', text);
+          notif.setAttribute('visible', 'true');
+          setTimeout(() => {
+            notif.setAttribute('visible', 'false');
+          }, 3500);
+        }
+      },
+      teleportTo(x, y, z, wingName) {
+        const rig = document.getElementById('player-rig');
+        if (rig) {
+          rig.setAttribute('position', `${x} ${y} ${z}`);
+        }
+        this.currentWing = wingName;
+        soundSynth.playPortal();
+        const wingEl = document.getElementById('hud-wing');
+        if (wingEl) wingEl.textContent = wingName;
+        
+        const vrLocText = document.getElementById('vr-tablet-loc');
+        if (vrLocText) {
+          vrLocText.setAttribute('text', 'value', `Current Wing: ${wingName}`);
+        }
+        this.showVRNotification(`Entering: ${wingName}`);
+      }
+    };
+  </script>
+
+  <!-- Custom A-Frame Components for Meta Quest 3S & Interactivity -->
+  <script>
+    // Grabbable / Clickable Interactivity Component
+    AFRAME.registerComponent('grabbable', {
+      schema: {
+        type: { type: 'string', default: 'generic' }
+      },
+      init: function () {
+        const el = this.el;
+        el.classList.add('raycastable');
+
+        // Hover visuals
+        el.addEventListener('mouseenter', () => {
+          el.setAttribute('material', 'emissive', '#38bdf8');
+          el.setAttribute('material', 'emissiveIntensity', '0.35');
+        });
+        el.addEventListener('mouseleave', () => {
+          el.setAttribute('material', 'emissive', '#000000');
+          el.setAttribute('material', 'emissiveIntensity', '0.0');
+        });
+
+        // Trigger / Click interaction
+        el.addEventListener('click', (evt) => {
+          soundSynth.playClick();
+          // Provide Quest 3S controller haptic pulse if available
+          if (evt.detail && evt.detail.cursorEl) {
+            const controller = evt.detail.cursorEl.components['tracked-controls-webxr'];
+            if (controller && controller.controller && controller.controller.gamepad && controller.controller.gamepad.hapticActuators) {
+              const actuator = controller.controller.gamepad.hapticActuators[0];
+              if (actuator) actuator.pulse(0.5, 50);
+            }
+          }
+        });
+      }
+    });
+
+    // Teleportation hotspot component
+    AFRAME.registerComponent('teleport-pad', {
+      schema: {
+        targetPos: { type: 'vec3' },
+        wingName: { type: 'string', default: 'Lab Wing' }
+      },
+      init: function () {
+        const el = this.el;
+        el.classList.add('raycastable');
+        el.addEventListener('mouseenter', () => {
+          el.setAttribute('scale', '1.15 1.15 1.15');
+          soundSynth.playBeep(900, 0.05);
+        });
+        el.addEventListener('mouseleave', () => {
+          el.setAttribute('scale', '1 1 1');
+        });
+        el.addEventListener('click', () => {
+          const p = this.data.targetPos;
+          window.OmniLab.teleportTo(p.x, p.y, p.z, this.data.wingName);
+        });
+      }
+    });
+
+    // Smooth rotation animation for models (DNA, portals)
+    AFRAME.registerComponent('auto-spin', {
+      schema: { speed: { type: 'number', default: 0.5 } },
+      tick: function (time, deltaTime) {
+        const rot = this.el.getAttribute('rotation');
+        this.el.setAttribute('rotation', {
+          x: rot.x,
+          y: rot.y + (this.data.speed * (deltaTime / 16)),
+          z: rot.z
+        });
+      }
+    });
+  </script>
+
+  <!-- A-FRAME SCENE -->
+  <a-scene
+    renderer="antialias: true; colorManagement: true; physicallyCorrectLights: true; highRefreshRate: true; foveationLevel: 2;"
+    vr-mode-ui="enabled: true;"
+    loading-screen="enabled: false"
+    background="color: #020617"
+    fog="type: exponential; color: #020617; density: 0.015">
+
+    <!-- ASSETS -->
+    <a-assets>
+      <!-- Reusable Mixins for UI and Lab Benches -->
+      <a-mixin id="lab-table"
+        geometry="primitive: box; width: 3.2; height: 0.85; depth: 1.4"
+        material="color: #1e293b; roughness: 0.3; metalness: 0.4"></a-mixin>
+      <a-mixin id="table-top"
+        geometry="primitive: box; width: 3.3; height: 0.08; depth: 1.5"
+        material="color: #0f172a; roughness: 0.1; metalness: 0.8"></a-mixin>
+      <a-mixin id="holo-panel"
+        geometry="primitive: plane; width: 2.2; height: 1.1"
+        material="color: #0f172a; opacity: 0.92; transparent: true; side: double"></a-mixin>
+      <a-mixin id="ui-btn"
+        geometry="primitive: box; width: 0.45; height: 0.14; depth: 0.04"
+        material="color: #0284c7; roughness: 0.2; metalness: 0.3"
+        class="raycastable"></a-mixin>
+    </a-assets>
+
+    <!-- PLAYER RIG & METACALIBRATED 6DOF CONTROLLERS -->
+    <a-entity id="player-rig" position="0 0 4">
+      <!-- Camera / Head -->
+      <a-camera id="head-camera" position="0 1.6 0" look-controls="pointerLockEnabled: false" wasd-controls="acceleration: 15">
+        <!-- Desktop Click Raycaster Cursor -->
+        <a-cursor
+          id="mouse-cursor"
+          position="0 0 -1"
+          geometry="primitive: ring; radiusInner: 0.01; radiusOuter: 0.018"
+          material="color: #38bdf8; shader: flat; opacity: 0.8"
+          raycaster="objects: .raycastable; far: 20">
+        </a-cursor>
+
+        <!-- Floating VR HUD Toast Notification -->
+        <a-entity id="vr-toast-notification"
+          position="0 0.5 -1.2"
+          geometry="primitive: plane; width: 1.5; height: 0.2"
+          material="color: #0284c7; opacity: 0.92; transparent: true"
+          text="value: Welcome to OmniLab VR; align: center; color: #ffffff; width: 2.2"
+          visible="false">
+        </a-entity>
+
+        <!-- Floating VR Student Dashboard HUD -->
+        <a-entity id="vr-wrist-tablet" position="0 -0.4 -0.9" rotation="-20 0 0">
+          <a-plane width="1.4" height="0.45" material="color: #090d16; opacity: 0.95; transparent: true; roughness: 0.2; metalness: 0.8" class="raycastable">
+            <a-entity position="0 0.15 0.01" text="value: OMNILAB VR - STUDENT DASHBOARD; align: center; color: #38bdf8; width: 2.4; font: roboto"></a-entity>
+            <a-entity id="vr-tablet-loc" position="-0.6 0.05 0.01" text="value: Current Wing: Central Atrium; align: left; color: #f8fafc; width: 1.8"></a-entity>
+            <a-entity id="vr-tablet-score" position="-0.6 -0.05 0.01" text="value: Student Score: 0 pts | Completed: 0/12; align: left; color: #facc15; width: 1.8"></a-entity>
+            
+            <!-- Quick Teleport Navigation Buttons inside HUD -->
+            <a-entity position="-0.45 -0.15 0.02" geometry="primitive: plane; width: 0.26; height: 0.08" material="color: #3b82f6" class="raycastable"
+              onclick="OmniLab.teleportTo(0, 0, 4, 'Central Atrium')">
+              <a-entity text="value: ATRIUM; align: center; width: 1.6; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="-0.15 -0.15 0.02" geometry="primitive: plane; width: 0.26; height: 0.08" material="color: #0284c7" class="raycastable"
+              onclick="OmniLab.teleportTo(-24, 0, 0, 'Physics Lab')">
+              <a-entity text="value: PHYSICS; align: center; width: 1.6; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="0.15 -0.15 0.02" geometry="primitive: plane; width: 0.26; height: 0.08" material="color: #059669" class="raycastable"
+              onclick="OmniLab.teleportTo(0, 0, -22, 'Chemistry Lab')">
+              <a-entity text="value: CHEM; align: center; width: 1.6; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="0.45 -0.15 0.02" geometry="primitive: plane; width: 0.26; height: 0.08" material="color: #9333ea" class="raycastable"
+              onclick="OmniLab.teleportTo(24, 0, 0, 'Biology Lab')">
+              <a-entity text="value: BIOLOGY; align: center; width: 1.6; color: #fff"></a-entity>
+            </a-entity>
+          </a-plane>
+        </a-entity>
+      </a-camera>
+
+      <!-- Left VR Controller (Teleport Arc & Pointing) -->
+      <a-entity id="left-controller"
+        oculus-touch-controls="hand: left"
+        laser-controls="hand: left"
+        raycaster="objects: .raycastable; far: 15; lineColor: #38bdf8; lineOpacity: 0.6">
+      </a-entity>
+
+      <!-- Right VR Controller (Laser Interaction, Grab & Trigger) -->
+      <a-entity id="right-controller"
+        oculus-touch-controls="hand: right"
+        laser-controls="hand: right"
+        raycaster="objects: .raycastable; far: 15; lineColor: #a855f7; lineOpacity: 0.8">
+      </a-entity>
+    </a-entity>
+
+    <!-- LIGHTING SYSTEM (Optimized for Meta Quest 3S) -->
+    <a-entity light="type: ambient; color: #cbd5e1; intensity: 0.75"></a-entity>
+    <a-entity light="type: directional; color: #f8fafc; intensity: 1.0; position: 0 10 0"></a-entity>
+
+    <!-- ========================================================================= -->
+    <!-- 1. CENTRAL SCIENCE CAMPUS ATRIUM                                          -->
+    <!-- ========================================================================= -->
+    <a-entity id="atrium-environment">
+      <!-- Atrium Floor with Grid -->
+      <a-circle radius="14" rotation="-90 0 0" position="0 0 0" material="color: #0b1120; roughness: 0.2; metalness: 0.5"></a-circle>
+      <a-ring radius-inner="13.7" radius-outer="14" rotation="-90 0 0" position="0 0.01 0" material="color: #38bdf8; emissive: #0284c7; emissiveIntensity: 0.6"></a-ring>
+      
+      <!-- Architectural Pillars -->
+      <a-cylinder position="-10 4 -10" radius="0.4" height="8" material="color: #1e293b; metalness: 0.8"></a-cylinder>
+      <a-cylinder position="10 4 -10" radius="0.4" height="8" material="color: #1e293b; metalness: 0.8"></a-cylinder>
+      <a-cylinder position="-10 4 10" radius="0.4" height="8" material="color: #1e293b; metalness: 0.8"></a-cylinder>
+      <a-cylinder position="10 4 10" radius="0.4" height="8" material="color: #1e293b; metalness: 0.8"></a-cylinder>
+
+      <!-- Welcome Hologram & Science Safety Orientation Center -->
+      <a-entity position="0 2.4 0">
+        <a-octahedron radius="0.8" material="color: #38bdf8; wireframe: true; emissive: #0284c7" auto-spin="speed: 0.8"></a-octahedron>
+        <a-sphere radius="0.35" material="color: #c084fc; emissive: #9333ea; emissiveIntensity: 0.8" auto-spin="speed: -1.2"></a-sphere>
+        <a-ring radius-inner="1.1" radius-outer="1.2" rotation="45 30 0" material="color: #34d399; side: double" auto-spin="speed: 1.5"></a-ring>
+      </a-entity>
+
+      <!-- Central Information Panel -->
+      <a-entity position="0 2.2 2.2" rotation="0 180 0">
+        <a-plane width="3.2" height="1.6" material="color: #0f172a; opacity: 0.9; transparent: true; roughness: 0.3; metalness: 0.7">
+          <a-entity position="0 0.6 0.01" text="value: OMNILAB VR SCIENCE CAMPUS; align: center; color: #38bdf8; width: 4.2; font: roboto"></a-entity>
+          <a-entity position="0 0.3 0.01" text="value: Step into the 3 Large Interactive Portals to access your Labs; align: center; color: #f8fafc; width: 2.8"></a-entity>
+          <a-entity position="-1.3 0.0 0.01" text="value: [1] West Portal: Physics Wing (Mechanics, Optics, Circuits)\n[2] North Portal: Chemistry Wing (Titration, Mixing, Flame)\n[3] East Portal: Biology Wing (Microscope, Cells, DNA, Heart); align: left; color: #94a3b8; width: 2.6"></a-entity>
+          <a-entity position="0 -0.5 0.01" text="value: Tip: Use Quest 3S Controllers to Grab, Click, and Teleport!; align: center; color: #facc15; width: 2.4"></a-entity>
+        </a-plane>
+      </a-entity>
+
+      <!-- Safety & PPE Station in Atrium -->
+      <a-entity id="safety-station" position="0 0 6.5">
+        <a-box position="0 0.5 0" width="2.4" height="1.0" depth="0.8" material="color: #1e293b; metalness: 0.5"></a-box>
+        <a-entity position="0 1.6 0" text="value: LAB SAFETY & PPE GEAR STATION; align: center; color: #ef4444; width: 3.2"></a-entity>
+        
+        <!-- Safety Goggles Model & Dispenser -->
+        <a-entity position="-0.6 1.1 0" class="raycastable" onclick="OmniLab.addScore(10, 'PPE Verification Complete'); soundSynth.playSuccess();">
+          <a-torus radius="0.12" tube="0.02" rotation="0 0 90" material="color: #38bdf8; metalness: 0.9; roughness: 0.1"></a-torus>
+          <a-entity position="0 -0.22 0" text="value: Safety Goggles\n[Equipped]; align: center; color: #38bdf8; width: 1.5"></a-entity>
+        </a-entity>
+
+        <!-- Fire Extinguisher Model -->
+        <a-entity id="fire-extinguisher" position="0.6 1.1 0" class="raycastable" onclick="soundSynth.playFizz(); OmniLab.showVRNotification('Fire Extinguisher Inspected & Ready (Pass)');">
+          <a-cylinder radius="0.12" height="0.5" material="color: #dc2626; roughness: 0.3"></a-cylinder>
+          <a-cylinder position="0 0.3 0" radius="0.04" height="0.1" material="color: #1e293b"></a-cylinder>
+          <a-entity position="0 -0.32 0" text="value: CO2 Extinguisher\n[Click to Test]; align: center; color: #f87171; width: 1.5"></a-entity>
+        </a-entity>
+      </a-entity>
+
+      <!-- ========================================================================= -->
+      <!-- 3 LARGE INTERACTIVE PORTALS                                              -->
+      <!-- ========================================================================= -->
+
+      <!-- 1. PORTAL TO PHYSICS LAB (WEST) -->
+      <a-entity id="portal-physics" position="-9 0 0" rotation="0 90 0">
+        <a-torus radius="2.2" tube="0.16" material="color: #0284c7; emissive: #0284c7; emissiveIntensity: 0.8" auto-spin="speed: 0.3"></a-torus>
+        <a-circle radius="2.0" material="color: #0369a1; opacity: 0.6; transparent: true; roughness: 0.1"
+          teleport-pad="targetPos: -24 0 0; wingName: Physics Lab"></a-circle>
+        <a-entity position="0 2.8 0" text="value: PHYSICS LABORATORY; align: center; color: #38bdf8; width: 6.0; font: roboto"></a-entity>
+        <a-entity position="0 2.4 0" text="value: Newton's Laws &bull; Optics &bull; Circuits; align: center; color: #bae6fd; width: 3.5"></a-entity>
+        <a-entity position="0 -1.5 0.5" geometry="primitive: cylinder; radius: 0.8; height: 0.1" material="color: #0284c7; emissive: #0284c7"
+          teleport-pad="targetPos: -24 0 0; wingName: Physics Lab">
+          <a-entity position="0 0.1 0" rotation="-90 0 0" text="value: ENTER PHYSICS LAB; align: center; color: #ffffff; width: 3.0"></a-entity>
+        </a-entity>
+      </a-entity>
+
+      <!-- 2. PORTAL TO CHEMISTRY LAB (NORTH) -->
+      <a-entity id="portal-chemistry" position="0 0 -9" rotation="0 0 0">
+        <a-torus radius="2.2" tube="0.16" material="color: #059669; emissive: #059669; emissiveIntensity: 0.8" auto-spin="speed: -0.3"></a-torus>
+        <a-circle radius="2.0" material="color: #047857; opacity: 0.6; transparent: true; roughness: 0.1"
+          teleport-pad="targetPos: 0 0 -22; wingName: Chemistry Lab"></a-circle>
+        <a-entity position="0 2.8 0" text="value: CHEMISTRY LABORATORY; align: center; color: #34d399; width: 6.0; font: roboto"></a-entity>
+        <a-entity position="0 2.4 0" text="value: Titration &bull; Chemical Reactions &bull; Flame Test &bull; pH Scale; align: center; color: #a7f3d0; width: 3.5"></a-entity>
+        <a-entity position="0 -1.5 0.5" geometry="primitive: cylinder; radius: 0.8; height: 0.1" material="color: #059669; emissive: #059669"
+          teleport-pad="targetPos: 0 0 -22; wingName: Chemistry Lab">
+          <a-entity position="0 0.1 0" rotation="-90 0 0" text="value: ENTER CHEMISTRY LAB; align: center; color: #ffffff; width: 3.0"></a-entity>
+        </a-entity>
+      </a-entity>
+
+      <!-- 3. PORTAL TO BIOLOGY LAB (EAST) -->
+      <a-entity id="portal-biology" position="9 0 0" rotation="0 -90 0">
+        <a-torus radius="2.2" tube="0.16" material="color: #9333ea; emissive: #9333ea; emissiveIntensity: 0.8" auto-spin="speed: 0.3"></a-torus>
+        <a-circle radius="2.0" material="color: #7e22ce; opacity: 0.6; transparent: true; roughness: 0.1"
+          teleport-pad="targetPos: 24 0 0; wingName: Biology Lab"></a-circle>
+        <a-entity position="0 2.8 0" text="value: BIOLOGY LABORATORY; align: center; color: #c084fc; width: 6.0; font: roboto"></a-entity>
+        <a-entity position="0 2.4 0" text="value: Optical Microscope &bull; Cell Dissection &bull; DNA &bull; Human Anatomy; align: center; color: #e9d5ff; width: 3.5"></a-entity>
+        <a-entity position="0 -1.5 0.5" geometry="primitive: cylinder; radius: 0.8; height: 0.1" material="color: #9333ea; emissive: #9333ea"
+          teleport-pad="targetPos: 24 0 0; wingName: Biology Lab">
+          <a-entity position="0 0.1 0" rotation="-90 0 0" text="value: ENTER BIOLOGY LAB; align: center; color: #ffffff; width: 3.0"></a-entity>
+        </a-entity>
+      </a-entity>
+    </a-entity>
+
+
+    <!-- ========================================================================= -->
+    <!-- 2. PHYSICS LABORATORY WING (X: -24, Z: 0)                                 -->
+    <!-- ========================================================================= -->
+    <a-entity id="physics-laboratory-wing" position="-24 0 0">
+      <!-- Physics Room Architecture -->
+      <a-plane position="0 0 0" rotation="-90 0 0" width="20" height="24" material="color: #0b1329; roughness: 0.3; metalness: 0.4"></a-plane>
+      <a-plane position="0 6 0" rotation="90 0 0" width="20" height="24" material="color: #0f172a; roughness: 0.8"></a-plane>
+      
+      <!-- Return to Atrium Portal -->
+      <a-entity position="8 0 0" rotation="0 -90 0">
+        <a-torus radius="1.4" tube="0.1" material="color: #38bdf8; emissive: #0284c7"></a-torus>
+        <a-circle radius="1.3" material="color: #0284c7; opacity: 0.5; transparent: true"
+          teleport-pad="targetPos: 0 0 4; wingName: Central Atrium"></a-circle>
+        <a-entity position="0 1.8 0" text="value: RETURN TO CENTRAL ATRIUM; align: center; color: #38bdf8; width: 3.5"></a-entity>
+      </a-entity>
+
+      <!-- Physics Header Banner -->
+      <a-entity position="0 4.5 -8">
+        <a-plane width="6" height="1.0" material="color: #0f172a; opacity: 0.9">
+          <a-entity position="0 0.1 0.01" text="value: ADVANCED PHYSICS LABORATORY; align: center; color: #38bdf8; width: 6.0"></a-entity>
+          <a-entity position="0 -0.25 0.01" text="value: Station 1: Projectile Cannon | Station 2: Harmonic Pendulum | Station 3: Ohm's Circuit | Station 4: Optics Laser; align: center; color: #94a3b8; width: 4.5"></a-entity>
+        </a-plane>
+      </a-entity>
+
+      <!-- P1: NEWTON'S LAWS & PROJECTILE CANNON STATION -->
+      <a-entity id="station-physics-cannon" position="-5 0 -4">
+        <a-box mixin="lab-table" position="0 0.42 0"></a-box>
+        <a-box mixin="table-top" position="0 0.88 0"></a-box>
+
+        <!-- Cannon Assembly -->
+        <a-entity id="cannon-assembly" position="-0.9 0.95 0">
+          <a-cylinder radius="0.18" height="0.1" material="color: #475569; metalness: 0.8"></a-cylinder>
+          <a-entity id="cannon-barrel" rotation="0 0 45" position="0 0.15 0">
+            <a-cylinder radius="0.08" height="0.6" position="0 0.3 0" material="color: #0284c7; metalness: 0.9; roughness: 0.2"></a-cylinder>
+            <a-torus radius="0.09" tube="0.015" position="0 0.6 0" rotation="90 0 0" material="color: #38bdf8"></a-torus>
+          </a-entity>
+          <a-sphere id="cannon-ball" radius="0.06" position="0 0.15 0" material="color: #f59e0b; metalness: 0.8" visible="false"></a-sphere>
+        </a-entity>
+
+        <!-- Target Track -->
+        <a-entity position="0.5 0.93 0">
+          <a-box width="1.6" height="0.02" depth="0.4" material="color: #334155"></a-box>
+          <a-cylinder id="cannon-target" position="0.6 0.03 0" radius="0.15" height="0.02" material="color: #ef4444"></a-cylinder>
+          <a-cylinder position="0.6 0.04 0" radius="0.08" height="0.02" material="color: #ffffff"></a-cylinder>
+          <a-cylinder position="0.6 0.05 0" radius="0.03" height="0.02" material="color: #ef4444"></a-cylinder>
+        </a-entity>
+
+        <!-- Cannon HUD -->
+        <a-entity position="0 1.6 0">
+          <a-plane mixin="holo-panel">
+            <a-entity position="0 0.42 0.01" text="value: EXPERIMENT P1: PROJECTILE MOTION & NEWTON'S 2ND LAW; align: center; color: #38bdf8; width: 2.8"></a-entity>
+            <a-entity id="cannon-telemetry" position="-0.95 0.18 0.01" text="value: Launch Angle (theta): 45 deg\nInitial Velocity (v0): 6.0 m/s\nGravity (g): 9.8 m/s^2\nTheoretical Range: 3.67 m\nFlight Time: 0.86 s; align: left; color: #f8fafc; width: 1.9"></a-entity>
+            
+            <a-entity position="-0.7 -0.22 0.02" mixin="ui-btn" width="0.22" height="0.1" class="raycastable" onclick="adjustCannonAngle(-5)">
+              <a-entity text="value: -5 DEG; align: center; width: 1.4; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="-0.45 -0.22 0.02" mixin="ui-btn" width="0.22" height="0.1" class="raycastable" onclick="adjustCannonAngle(5)">
+              <a-entity text="value: +5 DEG; align: center; width: 1.4; color: #fff"></a-entity>
+            </a-entity>
+
+            <a-entity position="-0.15 -0.22 0.02" mixin="ui-btn" width="0.22" height="0.1" class="raycastable" onclick="adjustCannonVelocity(-1)">
+              <a-entity text="value: -1 m/s; align: center; width: 1.4; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="0.1 -0.22 0.02" mixin="ui-btn" width="0.22" height="0.1" class="raycastable" onclick="adjustCannonVelocity(1)">
+              <a-entity text="value: +1 m/s; align: center; width: 1.4; color: #fff"></a-entity>
+            </a-entity>
+
+            <a-entity position="0.55 -0.22 0.02" geometry="primitive: box; width: 0.55; height: 0.16; depth: 0.04" material="color: #10b981" class="raycastable" onclick="launchCannonBall()">
+              <a-entity text="value: FIRE CANNON; align: center; width: 1.8; color: #fff; font: roboto"></a-entity>
+            </a-entity>
+            
+            <a-entity position="0 -0.42 0.01" text="value: [Quiz] What launch angle maximizes projectile range in a vacuum? (Answer: 45 deg); align: center; color: #facc15; width: 2.1"></a-entity>
+          </a-plane>
+        </a-entity>
+      </a-entity>
+
+      <!-- P2: HARMONIC SIMPLE PENDULUM -->
+      <a-entity id="station-physics-pendulum" position="2 0 -4">
+        <a-box mixin="lab-table" position="0 0.42 0"></a-box>
+        <a-box mixin="table-top" position="0 0.88 0"></a-box>
+
+        <!-- Pendulum Rig Frame -->
+        <a-cylinder position="-0.5 1.4 0" radius="0.02" height="1.0" material="color: #64748b; metalness: 0.8"></a-cylinder>
+        <a-cylinder position="-0.3 1.9 0" rotation="0 0 90" radius="0.02" height="0.4" material="color: #64748b; metalness: 0.8"></a-cylinder>
+
+        <!-- Oscillating Pendulum String & Bob -->
+        <a-entity id="pendulum-pivot" position="-0.3 1.9 0" rotation="0 0 30">
+          <a-cylinder id="pendulum-string" position="0 -0.35 0" radius="0.005" height="0.7" material="color: #e2e8f0"></a-cylinder>
+          <a-sphere id="pendulum-bob" position="0 -0.7 0" radius="0.07" material="color: #38bdf8; metalness: 0.9; roughness: 0.1" class="raycastable"></a-sphere>
+        </a-entity>
+
+        <!-- Pendulum HUD -->
+        <a-entity position="0 1.6 0">
+          <a-plane mixin="holo-panel">
+            <a-entity position="0 0.42 0.01" text="value: EXPERIMENT P2: SIMPLE HARMONIC MOTION (T = 2*pi*sqrt(L/g)); align: center; color: #38bdf8; width: 2.8"></a-entity>
+            <a-entity id="pendulum-telemetry" position="-0.95 0.18 0.01" text="value: String Length (L): 0.70 m\nMass (m): 0.50 kg\nGravity (g): 9.80 m/s^2 (Earth)\nCalculated Period (T): 1.68 s\nOscillation State: Active; align: left; color: #f8fafc; width: 1.9"></a-entity>
+
+            <a-entity position="-0.7 -0.22 0.02" mixin="ui-btn" width="0.3" height="0.1" class="raycastable" onclick="setPendulumGravity('Earth', 9.8)">
+              <a-entity text="value: Earth (9.8); align: center; width: 1.4; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="-0.35 -0.22 0.02" mixin="ui-btn" width="0.3" height="0.1" class="raycastable" onclick="setPendulumGravity('Moon', 1.62)">
+              <a-entity text="value: Moon (1.6); align: center; width: 1.4; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="0.0 -0.22 0.02" mixin="ui-btn" width="0.3" height="0.1" class="raycastable" onclick="setPendulumGravity('Mars', 3.71)">
+              <a-entity text="value: Mars (3.7); align: center; width: 1.4; color: #fff"></a-entity>
+            </a-entity>
+
+            <a-entity position="0.45 -0.22 0.02" mixin="ui-btn" width="0.4" height="0.1" class="raycastable" onclick="togglePendulumLength()">
+              <a-entity text="value: Toggle Length; align: center; width: 1.5; color: #fff"></a-entity>
+            </a-entity>
+            
+            <a-entity position="0 -0.42 0.01" text="value: [Concept] Pendulum period depends strictly on length & gravity, independent of mass!; align: center; color: #34d399; width: 2.1"></a-entity>
+          </a-plane>
+        </a-entity>
+      </a-entity>
+
+      <!-- P3: OHM'S LAW CIRCUIT BUILDER -->
+      <a-entity id="station-physics-circuit" position="-5 0 4">
+        <a-box mixin="lab-table" position="0 0.42 0"></a-box>
+        <a-box mixin="table-top" position="0 0.88 0"></a-box>
+
+        <!-- Circuit Board Components -->
+        <a-box position="-0.8 0.95 0" width="0.5" height="0.12" depth="0.4" material="color: #1e293b; metalness: 0.6">
+          <a-entity position="0 0.07 0" text="value: DC Power Supply; align: center; color: #38bdf8; width: 1.2"></a-entity>
+          <a-cylinder id="circuit-voltage-knob" position="0 0.07 0.1" radius="0.04" height="0.04" material="color: #ef4444" class="raycastable" onclick="adjustCircuitVoltage(1.5)"></a-cylinder>
+        </a-box>
+
+        <!-- Light Bulb Socket -->
+        <a-cylinder position="0.2 0.95 0" radius="0.1" height="0.06" material="color: #334155"></a-cylinder>
+        <a-sphere id="circuit-lightbulb" position="0.2 1.05 0" radius="0.09" material="color: #ffffff; opacity: 0.7; transparent: true; emissive: #facc15; emissiveIntensity: 0.5"></a-sphere>
+        <a-entity id="circuit-pointlight" light="type: point; color: #facc15; intensity: 0.8; distance: 2.0" position="0.2 1.05 0"></a-entity>
+
+        <!-- Multimeter -->
+        <a-box position="0.8 0.96 0" width="0.4" height="0.14" depth="0.3" material="color: #0f172a">
+          <a-entity id="circuit-multimeter-text" position="0 0.08 0" rotation="-45 0 0" text="value: V: 6.0 V\nI: 0.06 A\nR: 100 Ohm; align: center; color: #34d399; width: 1.2"></a-entity>
+        </a-box>
+
+        <!-- Circuit Station HUD -->
+        <a-entity position="0 1.6 0">
+          <a-plane mixin="holo-panel">
+            <a-entity position="0 0.42 0.01" text="value: EXPERIMENT P3: OHM'S LAW (V = I * R & P = V * I); align: center; color: #38bdf8; width: 2.8"></a-entity>
+            <a-entity id="circuit-hud-info" position="-0.95 0.18 0.01" text="value: Source Voltage (V): 6.0 Volts\nResistance (R): 100 Ohms\nCurrent (I = V/R): 0.060 A (60 mA)\nPower Dissipation (P): 0.36 Watts\nBulb Filament: Glowing; align: left; color: #f8fafc; width: 1.9"></a-entity>
+
+            <a-entity position="-0.65 -0.22 0.02" mixin="ui-btn" width="0.3" height="0.1" class="raycastable" onclick="adjustCircuitVoltage(-1.5)">
+              <a-entity text="value: -1.5 V; align: center; width: 1.4; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="-0.3 -0.22 0.02" mixin="ui-btn" width="0.3" height="0.1" class="raycastable" onclick="adjustCircuitVoltage(1.5)">
+              <a-entity text="value: +1.5 V; align: center; width: 1.4; color: #fff"></a-entity>
+            </a-entity>
+
+            <a-entity position="0.1 -0.22 0.02" mixin="ui-btn" width="0.35" height="0.1" class="raycastable" onclick="setCircuitResistor(100)">
+              <a-entity text="value: 100 Ohm; align: center; width: 1.4; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="0.5 -0.22 0.02" mixin="ui-btn" width="0.35" height="0.1" class="raycastable" onclick="setCircuitResistor(470)">
+              <a-entity text="value: 470 Ohm; align: center; width: 1.4; color: #fff"></a-entity>
+            </a-entity>
+
+            <a-entity position="0 -0.42 0.01" text="value: [Score +20] Click voltage/resistors to test Ohm's direct proportionality!; align: center; color: #facc15; width: 2.1"></a-entity>
+          </a-plane>
+        </a-entity>
+      </a-entity>
+
+      <!-- P4: GEOMETRIC OPTICS & LASER BENCH -->
+      <a-entity id="station-physics-optics" position="2 0 4">
+        <a-box mixin="lab-table" position="0 0.42 0"></a-box>
+        <a-box mixin="table-top" position="0 0.88 0"></a-box>
+
+        <!-- Laser Emitter -->
+        <a-cylinder position="-1.0 0.95 0" rotation="0 0 90" radius="0.04" height="0.3" material="color: #dc2626; metalness: 0.8"></a-cylinder>
+        <a-cylinder id="optics-laser-incident" position="-0.5 0.95 0" rotation="0 0 90" radius="0.008" height="0.8" material="color: #ef4444; emissive: #ef4444; emissiveIntensity: 1.0"></a-cylinder>
+        
+        <!-- Optical Element -->
+        <a-cylinder id="optics-element" position="0.0 0.96 0" radius="0.16" height="0.18" material="color: #38bdf8; opacity: 0.6; transparent: true; roughness: 0.05" class="raycastable" onclick="cycleOpticsElement()"></a-cylinder>
+        <a-cylinder id="optics-laser-refracted" position="0.5 0.95 0.08" rotation="10 0 90" radius="0.008" height="0.8" material="color: #38bdf8; emissive: #38bdf8; emissiveIntensity: 1.0"></a-cylinder>
+
+        <!-- Optics Station HUD -->
+        <a-entity position="0 1.6 0">
+          <a-plane mixin="holo-panel">
+            <a-entity position="0 0.42 0.01" text="value: EXPERIMENT P4: SNELL'S LAW & OPTICAL REFRACTION; align: center; color: #38bdf8; width: 2.8"></a-entity>
+            <a-entity id="optics-hud-text" position="-0.95 0.18 0.01" text="value: Element: Crown Glass Prism (n = 1.52)\nIncident Angle: 30.0 deg\nRefracted Angle (Snell's Law): 19.2 deg\nLaser Wavelength: 650 nm (Red)\nState: Transmitting; align: left; color: #f8fafc; width: 1.9"></a-entity>
+
+            <a-entity position="-0.5 -0.22 0.02" mixin="ui-btn" width="0.45" height="0.1" class="raycastable" onclick="cycleOpticsElement()">
+              <a-entity text="value: Swap Lens/Prism; align: center; width: 1.5; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="0.2 -0.22 0.02" mixin="ui-btn" width="0.45" height="0.1" class="raycastable" onclick="cycleLaserColor()">
+              <a-entity text="value: Change Laser RGB; align: center; width: 1.5; color: #fff"></a-entity>
+            </a-entity>
+
+            <a-entity position="0 -0.42 0.01" text="value: [Law] n1 * sin(theta1) = n2 * sin(theta2); align: center; color: #a7f3d0; width: 2.1"></a-entity>
+          </a-plane>
+        </a-entity>
+      </a-entity>
+    </a-entity>
+
+
+    <!-- ========================================================================= -->
+    <!-- 3. CHEMISTRY LABORATORY WING (X: 0, Z: -22)                               -->
+    <!-- ========================================================================= -->
+    <a-entity id="chemistry-laboratory-wing" position="0 0 -22">
+      <!-- Chemistry Architecture -->
+      <a-plane position="0 0 0" rotation="-90 0 0" width="24" height="20" material="color: #061e14; roughness: 0.3; metalness: 0.4"></a-plane>
+      <a-plane position="0 6 0" rotation="90 0 0" width="24" height="20" material="color: #022c22; roughness: 0.8"></a-plane>
+
+      <!-- Return to Atrium Portal -->
+      <a-entity position="0 0 8" rotation="0 180 0">
+        <a-torus radius="1.4" tube="0.1" material="color: #34d399; emissive: #059669"></a-torus>
+        <a-circle radius="1.3" material="color: #059669; opacity: 0.5; transparent: true"
+          teleport-pad="targetPos: 0 0 4; wingName: Central Atrium"></a-circle>
+        <a-entity position="0 1.8 0" text="value: RETURN TO CENTRAL ATRIUM; align: center; color: #34d399; width: 3.5"></a-entity>
+      </a-entity>
+
+      <!-- Chemistry Header Banner -->
+      <a-entity position="0 4.5 -8">
+        <a-plane width="6" height="1.0" material="color: #022c22; opacity: 0.9">
+          <a-entity position="0 0.1 0.01" text="value: ADVANCED CHEMISTRY LABORATORY; align: center; color: #34d399; width: 6.0"></a-entity>
+          <a-entity position="0 -0.25 0.01" text="value: Station 1: Acid-Base Titration | Station 2: Beaker Mixing Reactions | Station 3: Bunsen Flame Test | Station 4: pH Scale; align: center; color: #94a3b8; width: 4.5"></a-entity>
+        </a-plane>
+      </a-entity>
+
+      <!-- C1: ACID-BASE TITRATION -->
+      <a-entity id="station-chem-titration" position="-5 0 -4">
+        <a-box mixin="lab-table" position="0 0.42 0"></a-box>
+        <a-box mixin="table-top" position="0 0.88 0"></a-box>
+
+        <!-- Retort Stand & Burette -->
+        <a-box position="-0.5 0.9 0" width="0.25" height="0.04" depth="0.25" material="color: #334155; metalness: 0.8"></a-box>
+        <a-cylinder position="-0.5 1.5 0" radius="0.012" height="1.2" material="color: #94a3b8; metalness: 0.9"></a-cylinder>
+        <a-cylinder position="-0.35 1.7 0" rotation="0 0 90" radius="0.01" height="0.3" material="color: #94a3b8"></a-cylinder>
+        
+        <a-cylinder id="burette-glass" position="-0.2 1.55 0" radius="0.025" height="0.75" material="color: #ffffff; opacity: 0.5; transparent: true"></a-cylinder>
+        <a-cylinder id="burette-liquid" position="-0.2 1.55 0" radius="0.022" height="0.65" material="color: #e0f2fe; opacity: 0.8; transparent: true"></a-cylinder>
+        <a-box id="burette-stopcock" position="-0.2 1.15 0" width="0.04" height="0.04" depth="0.08" material="color: #ef4444" class="raycastable" onclick="addTitrantDrop(1.0)"></a-box>
+
+        <!-- Conical Flask -->
+        <a-cone position="-0.2 0.98 0" radius-bottom="0.1" radius-top="0.025" height="0.18" material="color: #ffffff; opacity: 0.4; transparent: true"></a-cone>
+        <a-cone id="titration-flask-liquid" position="-0.2 0.95 0" radius-bottom="0.09" radius-top="0.03" height="0.10" material="color: #ffffff; opacity: 0.85; transparent: true"></a-cone>
+
+        <!-- Titration Station HUD -->
+        <a-entity position="0 1.6 0">
+          <a-plane mixin="holo-panel">
+            <a-entity position="0 0.42 0.01" text="value: EXPERIMENT C1: QUANTITATIVE ACID-BASE TITRATION; align: center; color: #34d399; width: 2.8"></a-entity>
+            <a-entity id="titration-telemetry" position="-0.95 0.18 0.01" text="value: Analyte: 25.0 mL HCl (0.10 M)\nTitrant: 0.10 M NaOH in Burette\nIndicator: Phenolphthalein\nVolume NaOH Added: 0.00 mL\npH Level: 1.00 (Clear Acid); align: left; color: #f8fafc; width: 1.9"></a-entity>
+
+            <a-entity position="-0.6 -0.22 0.02" mixin="ui-btn" width="0.4" height="0.1" class="raycastable" onclick="addTitrantDrop(1.0)">
+              <a-entity text="value: Add +1.0 mL; align: center; width: 1.4; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="-0.15 -0.22 0.02" mixin="ui-btn" width="0.4" height="0.1" class="raycastable" onclick="addTitrantDrop(5.0)">
+              <a-entity text="value: Add +5.0 mL; align: center; width: 1.4; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="0.35 -0.22 0.02" mixin="ui-btn" width="0.4" height="0.1" class="raycastable" onclick="resetTitration()">
+              <a-entity text="value: Reset Flask; align: center; width: 1.4; color: #fff"></a-entity>
+            </a-entity>
+
+            <a-entity position="0 -0.42 0.01" text="value: [Equivalence Point: 25.0 mL -> Flash Pink pH 8.2!]; align: center; color: #f472b6; width: 2.1"></a-entity>
+          </a-plane>
+        </a-entity>
+      </a-entity>
+
+      <!-- C2: BEAKER MIXING REACTIONS -->
+      <a-entity id="station-chem-mixing" position="5 0 -4">
+        <a-box mixin="lab-table" position="0 0.42 0"></a-box>
+        <a-box mixin="table-top" position="0 0.88 0"></a-box>
+
+        <!-- Reagent Beakers -->
+        <a-cylinder id="beaker-cuso4" position="-0.9 0.98 0" radius="0.07" height="0.16" material="color: #0284c7; opacity: 0.7; transparent: true" class="raycastable" onclick="triggerPresetReaction('copper')">
+          <a-entity position="0 0.12 0" text="value: CuSO4; align: center; color: #38bdf8; width: 1.2"></a-entity>
+        </a-cylinder>
+
+        <a-cylinder id="beaker-naoh" position="-0.6 0.98 0" radius="0.07" height="0.16" material="color: #e0f2fe; opacity: 0.7; transparent: true" class="raycastable" onclick="triggerPresetReaction('copper')">
+          <a-entity position="0 0.12 0" text="value: NaOH; align: center; color: #ffffff; width: 1.2"></a-entity>
+        </a-cylinder>
+
+        <a-cylinder id="beaker-ki" position="-0.3 0.98 0" radius="0.07" height="0.16" material="color: #f8fafc; opacity: 0.7; transparent: true" class="raycastable" onclick="triggerPresetReaction('lead_iodide')">
+          <a-entity position="0 0.12 0" text="value: KI; align: center; color: #ffffff; width: 1.2"></a-entity>
+        </a-cylinder>
+
+        <a-cylinder id="beaker-pbno3" position="0.0 0.98 0" radius="0.07" height="0.16" material="color: #f8fafc; opacity: 0.7; transparent: true" class="raycastable" onclick="triggerPresetReaction('lead_iodide')">
+          <a-entity position="0 0.12 0" text="value: Pb(NO3)2; align: center; color: #ffffff; width: 1.2"></a-entity>
+        </a-cylinder>
+
+        <!-- Reaction Chamber Beaker -->
+        <a-cylinder position="0.6 1.0 0" radius="0.12" height="0.22" material="color: #ffffff; opacity: 0.4; transparent: true">
+          <a-cylinder id="main-reaction-liquid" position="0 -0.02 0" radius="0.11" height="0.16" material="color: #e2e8f0; opacity: 0.85; transparent: true"></a-cylinder>
+        </a-cylinder>
+
+        <!-- Mixing Station HUD -->
+        <a-entity position="0 1.6 0">
+          <a-plane mixin="holo-panel">
+            <a-entity position="0 0.42 0.01" text="value: EXPERIMENT C2: SOLUTION PRECIPITATION & GAS EVOLUTION; align: center; color: #34d399; width: 2.8"></a-entity>
+            <a-entity id="mixing-reaction-telemetry" position="-0.95 0.18 0.01" text="value: Reaction Beaker: Ready\n1. Click CuSO4 + NaOH -> Royal Blue Cu(OH)2 Precipitate\n2. Click KI + Pb(NO3)2 -> Golden Yellow PbI2 Rain\n3. Click NaHCO3 + HCl -> Vigorous CO2 Effervescence; align: left; color: #f8fafc; width: 1.9"></a-entity>
+
+            <a-entity position="-0.65 -0.22 0.02" mixin="ui-btn" width="0.4" height="0.1" class="raycastable" onclick="triggerPresetReaction('copper')">
+              <a-entity text="value: Mix Cu + OH; align: center; width: 1.4; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="-0.2 -0.22 0.02" mixin="ui-btn" width="0.4" height="0.1" class="raycastable" onclick="triggerPresetReaction('lead_iodide')">
+              <a-entity text="value: Mix KI + Pb; align: center; width: 1.4; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="0.25 -0.22 0.02" mixin="ui-btn" width="0.4" height="0.1" class="raycastable" onclick="triggerPresetReaction('effervescence')">
+              <a-entity text="value: Fizz CO2 Gas; align: center; width: 1.4; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="0.7 -0.22 0.02" mixin="ui-btn" width="0.3" height="0.1" class="raycastable" onclick="resetMixingReaction()">
+              <a-entity text="value: Clear; align: center; width: 1.3; color: #fff"></a-entity>
+            </a-entity>
+
+            <a-entity position="0 -0.42 0.01" text="value: [Score +20] Observe color transitions and solid precipitate formations!; align: center; color: #facc15; width: 2.1"></a-entity>
+          </a-plane>
+        </a-entity>
+      </a-entity>
+
+      <!-- C3: BUNSEN BURNER FLAME TEST -->
+      <a-entity id="station-chem-flame" position="-5 0 4">
+        <a-box mixin="lab-table" position="0 0.42 0"></a-box>
+        <a-box mixin="table-top" position="0 0.88 0"></a-box>
+
+        <!-- Bunsen Assembly -->
+        <a-cylinder position="-0.5 0.94 0" radius="0.1" height="0.06" material="color: #475569; metalness: 0.8"></a-cylinder>
+        <a-cylinder position="-0.5 1.1 0" radius="0.025" height="0.26" material="color: #94a3b8; metalness: 0.9"></a-cylinder>
+        
+        <a-cone id="bunsen-flame" position="-0.5 1.35 0" radius-bottom="0.04" radius-top="0.005" height="0.25" material="color: #38bdf8; opacity: 0.85; transparent: true; emissive: #0284c7; emissiveIntensity: 1.0"></a-cone>
+        <a-entity id="flame-light" light="type: point; color: #38bdf8; intensity: 1.2; distance: 2.5" position="-0.5 1.35 0"></a-entity>
+        <a-cylinder id="flame-loop" position="-0.2 1.2 0" rotation="0 0 -45" radius="0.005" height="0.3" material="color: #e2e8f0; metalness: 1.0"></a-cylinder>
+
+        <!-- Flame Station HUD -->
+        <a-entity position="0 1.6 0">
+          <a-plane mixin="holo-panel">
+            <a-entity position="0 0.42 0.01" text="value: EXPERIMENT C3: ATOMIC EMISSION FLAME TEST; align: center; color: #34d399; width: 2.8"></a-entity>
+            <a-entity id="flame-telemetry" position="-0.95 0.18 0.01" text="value: Flame Mode: Non-Luminous Roaring Blue (1400 deg C)\nActive Element: Pure Gas Flame\nEmission Wavelength: 470 nm\nElectron Transition: Ground State; align: left; color: #f8fafc; width: 1.9"></a-entity>
+
+            <a-entity position="-0.75 -0.22 0.02" mixin="ui-btn" width="0.3" height="0.1" class="raycastable" onclick="setFlameSalt('Copper (Cu2+)', '#10b981', '510 nm (Emerald Green)')">
+              <a-entity text="value: Cu (Green); align: center; width: 1.4; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="-0.4 -0.22 0.02" mixin="ui-btn" width="0.3" height="0.1" class="raycastable" onclick="setFlameSalt('Strontium (Sr2+)', '#ef4444', '650 nm (Crimson Red)')">
+              <a-entity text="value: Sr (Red); align: center; width: 1.4; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="-0.05 -0.22 0.02" mixin="ui-btn" width="0.3" height="0.1" class="raycastable" onclick="setFlameSalt('Sodium (Na+)', '#f59e0b', '589 nm (Intense Yellow)')">
+              <a-entity text="value: Na (Yellow); align: center; width: 1.4; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="0.3 -0.22 0.02" mixin="ui-btn" width="0.3" height="0.1" class="raycastable" onclick="setFlameSalt('Potassium (K+)', '#c084fc', '766 nm (Lilac Violet)')">
+              <a-entity text="value: K (Lilac); align: center; width: 1.4; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="0.65 -0.22 0.02" mixin="ui-btn" width="0.25" height="0.1" class="raycastable" onclick="resetFlame()">
+              <a-entity text="value: Reset; align: center; width: 1.4; color: #fff"></a-entity>
+            </a-entity>
+
+            <a-entity position="0 -0.42 0.01" text="value: [Theory] Excited electrons emit unique spectral photons as they drop energy levels.; align: center; color: #67e8f9; width: 2.1"></a-entity>
+          </a-plane>
+        </a-entity>
+      </a-entity>
+
+      <!-- C4: pH SCALE -->
+      <a-entity id="station-chem-ph" position="5 0 4">
+        <a-box mixin="lab-table" position="0 0.42 0"></a-box>
+        <a-box mixin="table-top" position="0 0.88 0"></a-box>
+
+        <!-- Test Tube Rack -->
+        <a-box position="0 0.94 0" width="1.2" height="0.08" depth="0.25" material="color: #1e293b"></a-box>
+        
+        <a-cylinder id="tube-ph-1" position="-0.4 1.05 0" radius="0.025" height="0.2" material="color: #ef4444; opacity: 0.85" class="raycastable" onclick="readPhSample('Battery Acid', 1.0, '#ef4444')"></a-cylinder>
+        <a-cylinder id="tube-ph-4" position="-0.2 1.05 0" radius="0.025" height="0.2" material="color: #f97316; opacity: 0.85" class="raycastable" onclick="readPhSample('Tomato Juice', 4.0, '#f97316')"></a-cylinder>
+        <a-cylinder id="tube-ph-7" position="0.0 1.05 0" radius="0.025" height="0.2" material="color: #22c55e; opacity: 0.85" class="raycastable" onclick="readPhSample('Pure Water', 7.0, '#22c55e')"></a-cylinder>
+        <a-cylinder id="tube-ph-10" position="0.2 1.05 0" radius="0.025" height="0.2" material="color: #06b6d4; opacity: 0.85" class="raycastable" onclick="readPhSample('Soap Solution', 10.0, '#06b6d4')"></a-cylinder>
+        <a-cylinder id="tube-ph-14" position="0.4 1.05 0" radius="0.025" height="0.2" material="color: #7c3aed; opacity: 0.85" class="raycastable" onclick="readPhSample('Bleach (NaOH)', 14.0, '#7c3aed')"></a-cylinder>
+
+        <!-- pH Station HUD -->
+        <a-entity position="0 1.6 0">
+          <a-plane mixin="holo-panel">
+            <a-entity position="0 0.42 0.01" text="value: EXPERIMENT C4: pH SCALE & UNIVERSAL INDICATOR; align: center; color: #34d399; width: 2.8"></a-entity>
+            <a-entity id="ph-telemetry" position="-0.95 0.18 0.01" text="value: Selected Sample: Pure Water\npH Value: 7.00 (Neutral)\n[H+] Ion Conc: 1.0 x 10^-7 M\nUniversal Color: Pure Green\nProbe Status: Active Calibration; align: left; color: #f8fafc; width: 1.9"></a-entity>
+
+            <a-entity position="0 -0.42 0.01" text="value: [Tip] Click each test tube to dip digital pH meter & measure hydronium ion concentration.; align: center; color: #facc15; width: 2.1"></a-entity>
+          </a-plane>
+        </a-entity>
+      </a-entity>
+    </a-entity>
+
+
+    <!-- ========================================================================= -->
+    <!-- 4. BIOLOGY LABORATORY WING (X: 24, Z: 0)                                  -->
+    <!-- ========================================================================= -->
+    <a-entity id="biology-laboratory-wing" position="24 0 0">
+      <!-- Biology Architecture -->
+      <a-plane position="0 0 0" rotation="-90 0 0" width="20" height="24" material="color: #1a0b2e; roughness: 0.3; metalness: 0.4"></a-plane>
+      <a-plane position="0 6 0" rotation="90 0 0" width="20" height="24" material="color: #2e1065; roughness: 0.8"></a-plane>
+
+      <!-- Return to Atrium Portal -->
+      <a-entity position="-8 0 0" rotation="0 90 0">
+        <a-torus radius="1.4" tube="0.1" material="color: #c084fc; emissive: #9333ea"></a-torus>
+        <a-circle radius="1.3" material="color: #9333ea; opacity: 0.5; transparent: true"
+          teleport-pad="targetPos: 0 0 4; wingName: Central Atrium"></a-circle>
+        <a-entity position="0 1.8 0" text="value: RETURN TO CENTRAL ATRIUM; align: center; color: #c084fc; width: 3.5"></a-entity>
+      </a-entity>
+
+      <!-- Biology Header Banner -->
+      <a-entity position="0 4.5 -8">
+        <a-plane width="6" height="1.0" material="color: #2e1065; opacity: 0.9">
+          <a-entity position="0 0.1 0.01" text="value: ADVANCED BIOLOGY LABORATORY; align: center; color: #c084fc; width: 6.0"></a-entity>
+          <a-entity position="0 -0.25 0.01" text="value: Station 1: Compound Microscope | Station 2: Cell Dissector | Station 3: DNA Double Helix | Station 4: Heart Physiology; align: center; color: #94a3b8; width: 4.5"></a-entity>
+        </a-plane>
+      </a-entity>
+
+      <!-- B1: OPTICAL MICROSCOPE -->
+      <a-entity id="station-bio-microscope" position="-5 0 -4">
+        <a-box mixin="lab-table" position="0 0.42 0"></a-box>
+        <a-box mixin="table-top" position="0 0.88 0"></a-box>
+
+        <!-- Microscope Model -->
+        <a-entity id="microscope-model" position="-0.6 0.95 0">
+          <a-box position="0 0.04 0" width="0.22" height="0.06" depth="0.28" material="color: #1e293b; metalness: 0.8"></a-box>
+          <a-cylinder position="0 0.22 -0.08" radius="0.02" height="0.32" material="color: #334155"></a-cylinder>
+          <a-box position="0 0.2 0.02" width="0.16" height="0.02" depth="0.16" material="color: #0f172a"></a-box>
+          <a-cylinder id="microscope-nosepiece" position="0 0.28 0.02" radius="0.04" height="0.04" material="color: #e2e8f0; metalness: 0.9" class="raycastable" onclick="cycleMicroscopeZoom()"></a-cylinder>
+          <a-cylinder position="0 0.4 -0.02" rotation="20 0 0" radius="0.02" height="0.18" material="color: #1e293b"></a-cylinder>
+        </a-entity>
+
+        <!-- Specimen Monitor Display Screen -->
+        <a-entity position="0.4 1.35 0">
+          <a-box width="1.1" height="0.75" depth="0.05" material="color: #0f172a"></a-box>
+          <a-circle id="microscope-viewport" position="0 0 0.03" radius="0.3" material="color: #0284c7; roughness: 0.1">
+            <a-entity id="specimen-label" position="0 -0.22 0.01" text="value: Onion Root Tip (Mitosis - 400X); align: center; color: #ffffff; width: 1.2"></a-entity>
+            <a-ring radius-inner="0.04" radius-outer="0.08" material="color: #facc15" auto-spin="speed: 0.5"></a-ring>
+            <a-ring radius-inner="0.12" radius-outer="0.14" material="color: #a855f7"></a-ring>
+          </a-circle>
+        </a-entity>
+
+        <!-- Microscope Station HUD -->
+        <a-entity position="0 1.95 0">
+          <a-plane mixin="holo-panel" width="2.2" height="0.6">
+            <a-entity position="0 0.18 0.01" text="value: EXPERIMENT B1: COMPOUND CELLULAR MICROSCOPY; align: center; color: #c084fc; width: 2.8"></a-entity>
+            <a-entity id="microscope-telemetry" position="0 0.0 0.01" text="value: Objective: 40X High-Power | Total Mag: 400X | Slide: Onion Root (Mitosis); align: center; color: #f8fafc; width: 2.2"></a-entity>
+            
+            <a-entity position="-0.7 -0.18 0.02" mixin="ui-btn" width="0.32" height="0.08" class="raycastable" onclick="setMicroscopeSlide('Onion Mitosis', '#0284c7', 'Stages: Prophase, Metaphase, Anaphase')">
+              <a-entity text="value: Onion Mitosis; align: center; width: 1.3; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="-0.25 -0.18 0.02" mixin="ui-btn" width="0.32" height="0.08" class="raycastable" onclick="setMicroscopeSlide('Human Blood', '#ef4444', 'Erythrocytes & Leukocytes')">
+              <a-entity text="value: Blood Smear; align: center; width: 1.3; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="0.2 -0.18 0.02" mixin="ui-btn" width="0.32" height="0.08" class="raycastable" onclick="setMicroscopeSlide('Paramecium', '#10b981', 'Cilia & Contractile Vacuole')">
+              <a-entity text="value: Paramecium; align: center; width: 1.3; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="0.65 -0.18 0.02" mixin="ui-btn" width="0.3" height="0.08" class="raycastable" onclick="cycleMicroscopeZoom()">
+              <a-entity text="value: Zoom Lens; align: center; width: 1.3; color: #fff"></a-entity>
+            </a-entity>
+          </a-plane>
+        </a-entity>
+      </a-entity>
+
+      <!-- B2: 3D CELL ORGANELLE EXPLODER -->
+      <a-entity id="station-bio-cell" position="5 0 -4">
+        <a-box mixin="lab-table" position="0 0.42 0"></a-box>
+        <a-box mixin="table-top" position="0 0.88 0"></a-box>
+
+        <!-- 3D Cellular Model -->
+        <a-entity id="cell-model-assembly" position="0 1.3 0">
+          <a-sphere id="cell-membrane" radius="0.35" material="color: #10b981; opacity: 0.35; transparent: true; roughness: 0.1" auto-spin="speed: 0.3"></a-sphere>
+          
+          <a-sphere id="organelle-nucleus" position="0 0 0" radius="0.12" material="color: #9333ea; emissive: #7e22ce; emissiveIntensity: 0.6" class="raycastable" onclick="inspectOrganelle('Nucleus', 'Houses genetic code (DNA), coordinates transcription & replication.')">
+            <a-sphere radius="0.04" material="color: #f43f5e"></a-sphere>
+          </a-sphere>
+
+          <a-cylinder id="organelle-mitochondria" position="0.18 0.12 0.08" rotation="45 30 0" radius="0.04" height="0.1" material="color: #f59e0b; emissive: #d97706" class="raycastable" onclick="inspectOrganelle('Mitochondrion', 'Synthesizes ATP via cellular respiration & electron transport chain.')"></a-cylinder>
+
+          <a-sphere id="organelle-chloroplast" position="-0.16 -0.12 0.1" radius="0.06" material="color: #22c55e" class="raycastable" onclick="inspectOrganelle('Chloroplast', 'Converts light energy into glucose via Photosynthesis (Thylakoids).')"></a-sphere>
+        </a-entity>
+
+        <!-- Cell Dissection HUD -->
+        <a-entity position="0 1.95 0">
+          <a-plane mixin="holo-panel" width="2.2" height="0.75">
+            <a-entity position="0 0.25 0.01" text="value: EXPERIMENT B2: 3D CELL ORGANELLE DISSECTION; align: center; color: #c084fc; width: 2.8"></a-entity>
+            <a-entity id="organelle-dossier" position="-0.95 0.05 0.01" text="value: Click an organelle to isolate & inspect biochemical function:\n[1] Nucleus (Purple) - Master DNA storage\n[2] Mitochondrion (Orange) - ATP Energy Production\n[3] Chloroplast (Green) - Photosynthetic Calvin Cycle; align: left; color: #f8fafc; width: 1.9"></a-entity>
+            
+            <a-entity position="-0.4 -0.22 0.02" mixin="ui-btn" width="0.45" height="0.09" class="raycastable" onclick="explodeCellModel()">
+              <a-entity text="value: Explode / Separate; align: center; width: 1.4; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="0.4 -0.22 0.02" mixin="ui-btn" width="0.45" height="0.09" class="raycastable" onclick="assembleCellModel()">
+              <a-entity text="value: Reassemble Cell; align: center; width: 1.4; color: #fff"></a-entity>
+            </a-entity>
+          </a-plane>
+        </a-entity>
+      </a-entity>
+
+      <!-- B3: DNA DOUBLE HELIX & BASE-PAIR SEQUENCING -->
+      <a-entity id="station-bio-dna" position="-5 0 4">
+        <a-box mixin="lab-table" position="0 0.42 0"></a-box>
+        <a-box mixin="table-top" position="0 0.88 0"></a-box>
+
+        <!-- Rotating DNA Model -->
+        <a-entity id="dna-helix-model" position="0 1.4 0" auto-spin="speed: 0.6">
+          <a-cylinder position="0 0.3 0" rotation="0 0 90" radius="0.012" height="0.32" material="color: #ef4444"></a-cylinder>
+          <a-cylinder position="0 0.15 0" rotation="0 36 90" radius="0.012" height="0.32" material="color: #3b82f6"></a-cylinder>
+          <a-cylinder position="0 0.0 0" rotation="0 72 90" radius="0.012" height="0.32" material="color: #10b981"></a-cylinder>
+          <a-cylinder position="0 -0.15 0" rotation="0 108 90" radius="0.012" height="0.32" material="color: #f59e0b"></a-cylinder>
+          <a-cylinder position="0 -0.3 0" rotation="0 144 90" radius="0.012" height="0.32" material="color: #ef4444"></a-cylinder>
+          <a-sphere position="0.16 0.3 0" radius="0.03" material="color: #38bdf8"></a-sphere>
+          <a-sphere position="-0.16 0.3 0" radius="0.03" material="color: #38bdf8"></a-sphere>
+        </a-entity>
+
+        <!-- DNA Sequencing HUD -->
+        <a-entity position="0 1.95 0">
+          <a-plane mixin="holo-panel" width="2.2" height="0.75">
+            <a-entity position="0 0.25 0.01" text="value: EXPERIMENT B3: DNA BASE-PAIR SEQUENCER; align: center; color: #c084fc; width: 2.8"></a-entity>
+            <a-entity id="dna-telemetry" position="-0.95 0.05 0.01" text="value: Watson-Crick Pairing Rule:\nAdenine (A) <-> Thymine (T) [2 H-Bonds]\nCytosine (C) <-> Guanine (G) [3 H-Bonds]\nTarget Template: [ 5' - A T G C - 3' ]; align: left; color: #f8fafc; width: 1.9"></a-entity>
+
+            <a-entity position="-0.6 -0.22 0.02" mixin="ui-btn" width="0.26" height="0.09" class="raycastable" onclick="pairNucleotide('A')">
+              <a-entity text="value: Pair A-T; align: center; width: 1.3; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="-0.2 -0.22 0.02" mixin="ui-btn" width="0.26" height="0.09" class="raycastable" onclick="pairNucleotide('C')">
+              <a-entity text="value: Pair C-G; align: center; width: 1.3; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="0.2 -0.22 0.02" mixin="ui-btn" width="0.26" height="0.09" class="raycastable" onclick="pairNucleotide('T')">
+              <a-entity text="value: Pair T-A; align: center; width: 1.3; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="0.6 -0.22 0.02" mixin="ui-btn" width="0.26" height="0.09" class="raycastable" onclick="pairNucleotide('G')">
+              <a-entity text="value: Pair G-C; align: center; width: 1.3; color: #fff"></a-entity>
+            </a-entity>
+          </a-plane>
+        </a-entity>
+      </a-entity>
+
+      <!-- B4: HUMAN CARDIOVASCULAR & HEART SIMULATOR -->
+      <a-entity id="station-bio-cardio" position="5 0 4">
+        <a-box mixin="lab-table" position="0 0.42 0"></a-box>
+        <a-box mixin="table-top" position="0 0.88 0"></a-box>
+
+        <!-- Pumping Cardiac Model -->
+        <a-entity id="cardio-model-root" position="0 1.25 0">
+          <a-dodecahedron id="heart-ventricle" radius="0.18" material="color: #dc2626; roughness: 0.3; metalness: 0.2" class="raycastable" onclick="triggerHeartbeat()"></a-dodecahedron>
+          <a-cylinder position="0.05 0.18 0" radius="0.04" height="0.14" material="color: #ef4444"></a-cylinder>
+          <a-cylinder position="-0.06 0.18 0" radius="0.035" height="0.14" material="color: #2563eb"></a-cylinder>
+        </a-entity>
+
+        <!-- Cardiovascular Station HUD -->
+        <a-entity position="0 1.95 0">
+          <a-plane mixin="holo-panel" width="2.2" height="0.75">
+            <a-entity position="0 0.25 0.01" text="value: EXPERIMENT B4: CARDIAC VALVE & PULSE PHYSIOLOGY; align: center; color: #c084fc; width: 2.8"></a-entity>
+            <a-entity id="cardio-telemetry" position="-0.95 0.05 0.01" text="value: Heart Rate: 72 BPM (Resting Norm)\nStroke Volume: 70 mL / beat\nCardiac Output: 5.04 L/min\nValves: Tricuspid & Bicuspid Synchronized; align: left; color: #f8fafc; width: 1.9"></a-entity>
+
+            <a-entity position="-0.6 -0.22 0.02" mixin="ui-btn" width="0.32" height="0.09" class="raycastable" onclick="setHeartBpm(60)">
+              <a-entity text="value: 60 BPM (Rest); align: center; width: 1.3; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="-0.15 -0.22 0.02" mixin="ui-btn" width="0.32" height="0.09" class="raycastable" onclick="setHeartBpm(120)">
+              <a-entity text="value: 120 BPM (Run); align: center; width: 1.3; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="0.3 -0.22 0.02" mixin="ui-btn" width="0.32" height="0.09" class="raycastable" onclick="setHeartBpm(160)">
+              <a-entity text="value: 160 BPM (Sprint); align: center; width: 1.3; color: #fff"></a-entity>
+            </a-entity>
+            <a-entity position="0.7 -0.22 0.02" mixin="ui-btn" width="0.25" height="0.09" class="raycastable" onclick="triggerHeartbeat()">
+              <a-entity text="value: Pulse; align: center; width: 1.3; color: #fff"></a-entity>
+            </a-entity>
+          </a-plane>
+        </a-entity>
+      </a-entity>
+    </a-entity>
+
+  </a-scene>
+
+  <!-- ========================================================================= -->
+  <!-- EXPERIMENTAL SCRIPTS & INTERACTIVE LOGIC                                  -->
+  <!-- ========================================================================= -->
+  <script>
+    // 1. PHYSICS EXPERIMENT 1: PROJECTILE CANNON
+    let cannonAngle = 45;
+    let cannonVelocity = 6.0;
+    const gravityG = 9.8;
+
+    function updateCannonTelemetry() {
+      const rad = cannonAngle * Math.PI / 180;
+      const range = (Math.pow(cannonVelocity, 2) * Math.sin(2 * rad)) / gravityG;
+      const time = (2 * cannonVelocity * Math.sin(rad)) / gravityG;
+      
+      const telem = document.getElementById('cannon-telemetry');
+      if (telem) {
+        telem.setAttribute('text', 'value', 
+          `Launch Angle (theta): ${cannonAngle} deg\n` +
+          `Initial Velocity (v0): ${cannonVelocity.toFixed(1)} m/s\n` +
+          `Gravity (g): 9.8 m/s^2\n` +
+          `Theoretical Range: ${range.toFixed(2)} m\n` +
+          `Flight Time: ${time.toFixed(2)} s`
+        );
+      }
+
+      const barrel = document.getElementById('cannon-barrel');
+      if (barrel) {
+        barrel.setAttribute('rotation', `0 0 ${cannonAngle}`);
+      }
+    }
+
+    function adjustCannonAngle(delta) {
+      cannonAngle = Math.max(10, Math.min(85, cannonAngle + delta));
+      soundSynth.playClick();
+      updateCannonTelemetry();
+    }
+
+    function adjustCannonVelocity(delta) {
+      cannonVelocity = Math.max(2.0, Math.min(15.0, cannonVelocity + delta));
+      soundSynth.playClick();
+      updateCannonTelemetry();
+    }
+
+    function launchCannonBall() {
+      soundSynth.playCannon();
+      const ball = document.getElementById('cannon-ball');
+      if (!ball) return;
+
+      ball.setAttribute('visible', 'true');
+      ball.setAttribute('position', '0 0.15 0');
+
+      const rad = cannonAngle * Math.PI / 180;
+      const vx = cannonVelocity * Math.cos(rad) * 0.25;
+      const vy = cannonVelocity * Math.sin(rad) * 0.25;
+      let t = 0;
+
+      const timer = setInterval(() => {
+        t += 0.03;
+        const x = vx * t;
+        const y = 0.15 + (vy * t) - (0.5 * 2.5 * Math.pow(t, 2));
+
+        ball.setAttribute('position', `${x} ${y} 0`);
+
+        if (y <= 0.05 && t > 0.1) {
+          clearInterval(timer);
+          soundSynth.playBeep(300, 0.1);
+          window.OmniLab.addScore(20, "Projectile Launched Successfully");
+          window.OmniLab.experimentsCompleted.physics_cannon = true;
+          setTimeout(() => {
+            ball.setAttribute('visible', 'false');
+          }, 1500);
+        }
+      }, 30);
+    }
+
+    // 2. PHYSICS EXPERIMENT 2: HARMONIC PENDULUM
+    let pendulumG = 9.8;
+    let pendulumLength = 0.7;
+    let pendulumAngle = 0;
+    let pendulumTime = 0;
+
+    function setPendulumGravity(planet, gVal) {
+      pendulumG = gVal;
+      soundSynth.playClick();
+      const period = (2 * Math.PI * Math.sqrt(pendulumLength / pendulumG)).toFixed(2);
+      const telem = document.getElementById('pendulum-telemetry');
+      if (telem) {
+        telem.setAttribute('text', 'value',
+          `String Length (L): ${pendulumLength.toFixed(2)} m\n` +
+          `Mass (m): 0.50 kg\n` +
+          `Gravity (g): ${pendulumG.toFixed(2)} m/s^2 (${planet})\n` +
+          `Calculated Period (T): ${period} s\n` +
+          `Oscillation State: Active`
+        );
+      }
+      window.OmniLab.addScore(15, `Pendulum Gravity Set to ${planet}`);
+      window.OmniLab.experimentsCompleted.physics_pendulum = true;
+    }
+
+    function togglePendulumLength() {
+      pendulumLength = pendulumLength === 0.7 ? 1.1 : 0.7;
+      soundSynth.playClick();
+      const stringEl = document.getElementById('pendulum-string');
+      const bobEl = document.getElementById('pendulum-bob');
+      if (stringEl && bobEl) {
+        stringEl.setAttribute('height', pendulumLength);
+        stringEl.setAttribute('position', `0 ${-pendulumLength / 2} 0`);
+        bobEl.setAttribute('position', `0 ${-pendulumLength} 0`);
+      }
+      setPendulumGravity('Current', pendulumG);
+    }
+
+    setInterval(() => {
+      pendulumTime += 0.04;
+      const omega = Math.sqrt(pendulumG / pendulumLength);
+      pendulumAngle = 25 * Math.cos(omega * pendulumTime);
+      const pivot = document.getElementById('pendulum-pivot');
+      if (pivot) {
+        pivot.setAttribute('rotation', `0 0 ${pendulumAngle}`);
+      }
+    }, 40);
+
+    // 3. PHYSICS EXPERIMENT 3: OHM'S LAW CIRCUIT
+    let circuitVoltage = 6.0;
+    let circuitResistance = 100;
+
+    function updateCircuitDisplay() {
+      const current = circuitVoltage / circuitResistance;
+      const power = circuitVoltage * current;
+
+      const telem = document.getElementById('circuit-hud-info');
+      if (telem) {
+        telem.setAttribute('text', 'value',
+          `Source Voltage (V): ${circuitVoltage.toFixed(1)} Volts\n` +
+          `Resistance (R): ${circuitResistance} Ohms\n` +
+          `Current (I = V/R): ${current.toFixed(3)} A (${(current * 1000).toFixed(0)} mA)\n` +
+          `Power Dissipation (P): ${power.toFixed(2)} Watts\n` +
+          `Bulb Filament: ${(power > 0.05 ? 'Glowing High' : 'Dim')}`
+        );
+      }
+
+      const multiText = document.getElementById('circuit-multimeter-text');
+      if (multiText) {
+        multiText.setAttribute('text', 'value', `V: ${circuitVoltage.toFixed(1)} V\nI: ${current.toFixed(3)} A\nR: ${circuitResistance} Ohm`);
+      }
+
+      const bulb = document.getElementById('circuit-lightbulb');
+      const light = document.getElementById('circuit-pointlight');
+      if (bulb && light) {
+        const intensity = Math.min(2.5, power * 2.0);
+        bulb.setAttribute('material', 'emissiveIntensity', intensity);
+        light.setAttribute('light', 'intensity', intensity);
+      }
+    }
+
+    function adjustCircuitVoltage(delta) {
+      circuitVoltage = Math.max(0, Math.min(12, circuitVoltage + delta));
+      soundSynth.playBeep(400 + circuitVoltage * 40, 0.08);
+      updateCircuitDisplay();
+      window.OmniLab.addScore(10, "Circuit Voltage Adjusted");
+      window.OmniLab.experimentsCompleted.physics_circuit = true;
+    }
+
+    function setCircuitResistor(rVal) {
+      circuitResistance = rVal;
+      soundSynth.playClick();
+      updateCircuitDisplay();
+    }
+
+    // 4. PHYSICS EXPERIMENT 4: OPTICS BENCH
+    const opticsElements = [
+      { name: 'Crown Glass Prism (n = 1.52)', n: 1.52, angle: '19.2 deg' },
+      { name: 'Biconvex Converging Lens (f = +15cm)', n: 1.65, angle: 'Focusing' },
+      { name: 'Concave Diverging Lens (f = -15cm)', n: 1.50, angle: 'Diverging' }
+    ];
+    let opticsIdx = 0;
+
+    function cycleOpticsElement() {
+      opticsIdx = (opticsIdx + 1) % opticsElements.length;
+      soundSynth.playLaserHum();
+      const el = opticsElements[opticsIdx];
+      const telem = document.getElementById('optics-hud-text');
+      if (telem) {
+        telem.setAttribute('text', 'value',
+          `Element: ${el.name}\n` +
+          `Incident Angle: 30.0 deg\n` +
+          `Refracted State: ${el.angle}\n` +
+          `Laser Wavelength: 650 nm\n` +
+          `State: Active Snell's Law Refraction`
+        );
+      }
+      window.OmniLab.addScore(15, "Optical Element Evaluated");
+      window.OmniLab.experimentsCompleted.physics_optics = true;
+    }
+
+    function cycleLaserColor() {
+      soundSynth.playLaserHum();
+      const colors = ['#ef4444', '#10b981', '#38bdf8', '#a855f7'];
+      const pick = colors[Math.floor(Math.random() * colors.length)];
+      const inc = document.getElementById('optics-laser-incident');
+      if (inc) inc.setAttribute('material', 'color', pick);
+    }
+
+    // 5. CHEMISTRY EXPERIMENT 1: TITRATION
+    let naohAdded = 0.0;
+
+    function addTitrantDrop(amount) {
+      naohAdded = Math.min(35.0, naohAdded + amount);
+      soundSynth.playPour();
+
+      let ph = 1.0;
+      let color = '#ffffff';
+      let state = 'Clear Acidic';
+
+      if (naohAdded < 24.5) {
+        ph = 1.0 + (naohAdded / 25.0) * 1.8;
+      } else if (naohAdded >= 24.5 && naohAdded <= 25.5) {
+        ph = 7.0 + (naohAdded - 25.0) * 2.0;
+        color = '#f472b6';
+        state = 'Equivalence Transition (Pink Endpoint!)';
+        soundSynth.playSuccess();
+        window.OmniLab.addScore(30, 'Titration Equivalence Point Reached!');
+        window.OmniLab.experimentsCompleted.chem_titration = true;
+      } else {
+        ph = 12.0 + Math.min(1.8, (naohAdded - 25.0) * 0.1);
+        color = '#db2777';
+        state = 'Excess Base (Deep Magenta)';
+      }
+
+      const telem = document.getElementById('titration-telemetry');
+      if (telem) {
+        telem.setAttribute('text', 'value',
+          `Analyte: 25.0 mL HCl (0.10 M)\n` +
+          `Titrant: 0.10 M NaOH in Burette\n` +
+          `Indicator: Phenolphthalein\n` +
+          `Volume NaOH Added: ${naohAdded.toFixed(2)} mL\n` +
+          `pH Level: ${ph.toFixed(2)} (${state})`
+        );
+      }
+
+      const flaskLiquid = document.getElementById('titration-flask-liquid');
+      if (flaskLiquid) {
+        flaskLiquid.setAttribute('material', 'color', color);
+      }
+    }
+
+    function resetTitration() {
+      naohAdded = 0.0;
+      soundSynth.playClick();
+      addTitrantDrop(0.0);
+    }
+
+    // 6. CHEMISTRY EXPERIMENT 2: MIXING & PRECIPITATION
+    function triggerPresetReaction(type) {
+      const liquid = document.getElementById('main-reaction-liquid');
+      const telem = document.getElementById('mixing-reaction-telemetry');
+      if (!liquid || !telem) return;
+
+      if (type === 'copper') {
+        soundSynth.playPour();
+        liquid.setAttribute('material', 'color', '#0284c7');
+        telem.setAttribute('text', 'value', 'Precipitate: Copper(II) Hydroxide Cu(OH)2 (Royal Blue Gel)\nEquation: CuSO4 + 2NaOH -> Cu(OH)2(s) + Na2SO4\nState: Insoluble Precipitate Formed');
+        window.OmniLab.addScore(20, 'Cu(OH)2 Precipitate Created');
+        window.OmniLab.experimentsCompleted.chem_mixing = true;
+      } else if (type === 'lead_iodide') {
+        soundSynth.playPour();
+        liquid.setAttribute('material', 'color', '#facc15');
+        telem.setAttribute('text', 'value', 'Precipitate: Lead(II) Iodide PbI2 (Golden Rain Yellow)\nEquation: Pb(NO3)2 + 2KI -> PbI2(s) + 2KNO3\nState: Brilliant Golden Crystals');
+        window.OmniLab.addScore(25, 'PbI2 Golden Rain Formed');
+        window.OmniLab.experimentsCompleted.chem_mixing = true;
+      } else if (type === 'effervescence') {
+        soundSynth.playFizz();
+        liquid.setAttribute('material', 'color', '#e2e8f0');
+        telem.setAttribute('text', 'value', 'Reaction: Acid-Carbonate Neutralization\nEquation: NaHCO3 + HCl -> NaCl + H2O + CO2(g)\nState: Rapid Gas Effervescence Bubbling!');
+        window.OmniLab.addScore(20, 'CO2 Effervescence Reaction Observed');
+        window.OmniLab.experimentsCompleted.chem_mixing = true;
+      }
+    }
+
+    function resetMixingReaction() {
+      soundSynth.playClick();
+      const liquid = document.getElementById('main-reaction-liquid');
+      const telem = document.getElementById('mixing-reaction-telemetry');
+      if (liquid) liquid.setAttribute('material', 'color', '#e2e8f0');
+      if (telem) telem.setAttribute('text', 'value', 'Reaction Beaker: Cleaned & Ready for next test.');
+    }
+
+    // 7. CHEMISTRY EXPERIMENT 3: FLAME SPECTROSCOPY
+    function setFlameSalt(elementName, hexColor, waveInfo) {
+      soundSynth.playLaserHum();
+      const flame = document.getElementById('bunsen-flame');
+      const light = document.getElementById('flame-light');
+      const telem = document.getElementById('flame-telemetry');
+      if (flame && light && telem) {
+        flame.setAttribute('material', 'color', hexColor);
+        flame.setAttribute('material', 'emissive', hexColor);
+        light.setAttribute('light', 'color', hexColor);
+        telem.setAttribute('text', 'value',
+          `Active Element: ${elementName}\n` +
+          `Characteristic Emission: ${waveInfo}\n` +
+          `Excitation: Thermal Electron Promotion\n` +
+          `De-excitation: Quantized Photon Emission`
+        );
+      }
+      window.OmniLab.addScore(15, `Flame Test: ${elementName}`);
+      window.OmniLab.experimentsCompleted.chem_flame = true;
+    }
+
+    function resetFlame() {
+      setFlameSalt('Pure Methane Flame', '#38bdf8', '470 nm (Non-Luminous Blue)');
+    }
+
+    // 8. CHEMISTRY EXPERIMENT 4: pH SCALE
+    function readPhSample(sampleName, phVal, colorHex) {
+      soundSynth.playBeep(500, 0.1);
+      const hConc = Math.pow(10, -phVal).toExponential(2);
+      const telem = document.getElementById('ph-telemetry');
+      if (telem) {
+        telem.setAttribute('text', 'value',
+          `Selected Sample: ${sampleName}\n` +
+          `pH Value: ${phVal.toFixed(2)}\n` +
+          `[H+] Concentration: ${hConc} M\n` +
+          `Classification: ${(phVal < 7 ? 'Acidic' : (phVal === 7 ? 'Neutral' : 'Basic/Alkaline'))}\n` +
+          `Probe Status: Calibrated (Pass)`
+        );
+      }
+      window.OmniLab.addScore(15, `pH Evaluated: ${sampleName}`);
+      window.OmniLab.experimentsCompleted.chem_ph = true;
+    }
+
+    // 9. BIOLOGY EXPERIMENT 1: MICROSCOPE
+    let currentZoom = 400;
+
+    function setMicroscopeSlide(name, color, desc) {
+      soundSynth.playClick();
+      const viewport = document.getElementById('microscope-viewport');
+      const label = document.getElementById('specimen-label');
+      const telem = document.getElementById('microscope-telemetry');
+      if (viewport && label && telem) {
+        viewport.setAttribute('material', 'color', color);
+        label.setAttribute('text', 'value', `${name} (${currentZoom}X)`);
+        telem.setAttribute('text', 'value', `Slide: ${name} | Mag: ${currentZoom}X | Features: ${desc}`);
+      }
+      window.OmniLab.addScore(15, `Microscope Slide: ${name}`);
+      window.OmniLab.experimentsCompleted.bio_microscope = true;
+    }
+
+    function cycleMicroscopeZoom() {
+      soundSynth.playClick();
+      currentZoom = currentZoom === 100 ? 400 : (currentZoom === 400 ? 1000 : 100);
+      const label = document.getElementById('specimen-label');
+      if (label) {
+        const text = label.getAttribute('text').value;
+        const base = text.split(' (')[0];
+        label.setAttribute('text', 'value', `${base} (${currentZoom}X)`);
+      }
+      window.OmniLab.showVRNotification(`Microscope Objective Swapped: ${currentZoom}X`);
+    }
+
+    // 10. BIOLOGY EXPERIMENT 2: CELL EXPLODER
+    function inspectOrganelle(name, description) {
+      soundSynth.playSuccess();
+      const dossier = document.getElementById('organelle-dossier');
+      if (dossier) {
+        dossier.setAttribute('text', 'value', `Selected: ${name}\nFunction: ${description}\nStatus: Isolated & Functional`);
+      }
+      window.OmniLab.addScore(20, `Organelle Inspected: ${name}`);
+      window.OmniLab.experimentsCompleted.bio_cell = true;
+    }
+
+    function explodeCellModel() {
+      soundSynth.playClick();
+      const nuc = document.getElementById('organelle-nucleus');
+      const mito = document.getElementById('organelle-mitochondria');
+      const chloro = document.getElementById('organelle-chloroplast');
+      if (nuc) nuc.setAttribute('position', '0 0.25 0');
+      if (mito) mito.setAttribute('position', '0.35 0.2 0.15');
+      if (chloro) chloro.setAttribute('position', '-0.35 -0.2 0.2');
+      window.OmniLab.showVRNotification('Cell Disassembled into Component Organelles');
+    }
+
+    function assembleCellModel() {
+      soundSynth.playClick();
+      const nuc = document.getElementById('organelle-nucleus');
+      const mito = document.getElementById('organelle-mitochondria');
+      const chloro = document.getElementById('organelle-chloroplast');
+      if (nuc) nuc.setAttribute('position', '0 0 0');
+      if (mito) mito.setAttribute('position', '0.18 0.12 0.08');
+      if (chloro) chloro.setAttribute('position', '-0.16 -0.12 0.1');
+      window.OmniLab.showVRNotification('Cell Reassembled');
+    }
+
+    // 11. BIOLOGY EXPERIMENT 3: DNA SEQUENCER
+    function pairNucleotide(base) {
+      soundSynth.playBeep(650, 0.08);
+      const telem = document.getElementById('dna-telemetry');
+      let complement = '';
+      let bonds = 2;
+      if (base === 'A') { complement = 'Thymine (T)'; bonds = 2; }
+      else if (base === 'T') { complement = 'Adenine (A)'; bonds = 2; }
+      else if (base === 'C') { complement = 'Guanine (G)'; bonds = 3; }
+      else if (base === 'G') { complement = 'Cytosine (C)'; bonds = 3; }
+
+      if (telem) {
+        telem.setAttribute('text', 'value',
+          `Synthesized Base Pair: ${base} <=> ${complement}\n` +
+          `Hydrogen Bonds Formed: ${bonds} H-Bonds\n` +
+          `Helix Conformation: B-DNA Right-Handed\n` +
+          `Status: Perfect Complementary Match!`
+        );
+      }
+      window.OmniLab.addScore(15, `DNA Base Paired: ${base}-${complement[0]}`);
+      window.OmniLab.experimentsCompleted.bio_dna = true;
+    }
+
+    // 12. BIOLOGY EXPERIMENT 4: CARDIOVASCULAR
+    let currentBpm = 72;
+    let heartInterval = null;
+
+    function setHeartBpm(bpm) {
+      currentBpm = bpm;
+      soundSynth.playClick();
+      const cardiacOutput = ((bpm * 70) / 1000).toFixed(2);
+      const telem = document.getElementById('cardio-telemetry');
+      if (telem) {
+        telem.setAttribute('text', 'value',
+          `Heart Rate: ${bpm} BPM\n` +
+          `Stroke Volume: 70 mL / beat\n` +
+          `Cardiac Output: ${cardiacOutput} L/min\n` +
+          `Conduction: SA Node -> AV Node -> Purkinje Fibers`
+        );
+      }
+      restartHeartbeatLoop();
+      window.OmniLab.addScore(15, `Heart Rate Set to ${bpm} BPM`);
+      window.OmniLab.experimentsCompleted.bio_cardio = true;
+    }
+
+    function triggerHeartbeat() {
+      soundSynth.playHeartbeat();
+      const ventricle = document.getElementById('heart-ventricle');
+      if (ventricle) {
+        ventricle.setAttribute('scale', '1.25 1.25 1.25');
+        setTimeout(() => {
+          ventricle.setAttribute('scale', '1.0 1.0 1.0');
+        }, 120);
+      }
+    }
+
+    function restartHeartbeatLoop() {
+      if (heartInterval) clearInterval(heartInterval);
+      const ms = (60 / currentBpm) * 1000;
+      heartInterval = setInterval(() => {
+        triggerHeartbeat();
+      }, ms);
+    }
+    restartHeartbeatLoop();
+
+    // INITIALIZATION & EVENT LISTENERS
+    document.getElementById('enter-lab-btn').addEventListener('click', () => {
+      soundSynth.init();
+      soundSynth.playSuccess();
+      const screen = document.getElementById('loading-screen');
+      if (screen) {
+        screen.style.opacity = '0';
+        setTimeout(() => { screen.style.display = 'none'; }, 800);
+      }
+      document.getElementById('crosshair').style.display = 'block';
+    });
+  </script>
+</body>
+</html>
